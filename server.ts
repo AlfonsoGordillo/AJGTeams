@@ -444,7 +444,7 @@ ${content}`;
 
 // Setup Vite or Static File Serving
 async function startServer() {
-  const isProduction = process.env.NODE_ENV === 'production';
+  const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RENDER;
   const distDir = path.resolve('dist');
   const indexHtml = path.resolve('dist', 'index.html');
   const hasBuiltDist = fs.existsSync(indexHtml);
@@ -456,7 +456,7 @@ async function startServer() {
     });
   } else {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, allowedHosts: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
