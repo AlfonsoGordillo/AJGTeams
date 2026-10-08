@@ -16,7 +16,7 @@ const port = process.env.PORT || 3000;
 app.use(express.json({ limit: '15mb' }));
 
 // Initialize Google Gemini API with telemetry header
-const ai = new GoogleGenAI({
+let ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
   httpOptions: {
     headers: {
@@ -25,8 +25,24 @@ const ai = new GoogleGenAI({
   },
 });
 
+function reinitAi(key: string) {
+  process.env.GEMINI_API_KEY = key;
+  ai = new GoogleGenAI({
+    apiKey: key,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
+}
+
 // Helper to generate text with model fallback (handles temporary 503 high-demand spikes)
 async function generateGeminiText(prompt: string, primaryModel = 'gemini-3.8-flash'): Promise<string> {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is not configured on the server');
+  }
+
   const modelsToTry = [primaryModel, 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
   let lastError: any = null;
 
@@ -295,6 +311,89 @@ Do not include any quotes, stage directions, or roleplay labels. Just your direc
 
 // REST API Endpoints
 
+// 0. Gemini API Key Status and Health Check
+app.get('/api/gemini-status', (req, res) => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key || !key.trim()) {
+    return res.json({
+      hasKey: false,
+      status: 'missing_key',
+      keyPreview: null,
+      message: 'GEMINI_API_KEY no detectada en las variables de entorno.',
+    });
+  }
+
+  const trimmed = key.trim();
+  const preview =
+    trimmed.length > 8
+      ? `${trimmed.substring(0, 6)}...${trimmed.substring(trimmed.length - 4)}`
+      : '***';
+
+  res.json({
+    hasKey: true,
+    status: 'ready',
+    keyPreview: preview,
+    message: 'Servicio Gemini 3.8 Flash activo y listo para traducir.',
+  });
+});
+
+// Update Gemini API key at runtime (allows testing immediately without restart)
+app.post('/api/set-gemini-key', (req, res) => {
+  const { apiKey } = req.body;
+  if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+    return res.status(400).json({ error: 'Clave de API inválida' });
+  }
+
+  const cleanKey = apiKey.trim();
+  reinitAi(cleanKey);
+
+  const preview =
+    cleanKey.length > 8
+      ? `${cleanKey.substring(0, 6)}...${cleanKey.substring(cleanKey.length - 4)}`
+      : '***';
+
+  res.json({
+    success: true,
+    hasKey: true,
+    keyPreview: preview,
+    message: 'Clave de Gemini API guardada y activada con éxito.',
+  });
+});
+
+// Live Test Translation Endpoint
+app.post('/api/test-translation', async (req, res) => {
+  const text = req.body.text || 'Hola, bienvenidos a la reunión con traducción simultánea.';
+  const sourceLang = req.body.sourceLang || 'Spanish';
+  const targetLang = req.body.targetLang || 'English';
+
+  if (!process.env.GEMINI_API_KEY) {
+    return res.status(400).json({
+      success: false,
+      error: 'GEMINI_API_KEY no está configurada en el servidor (Render). Configúrala en la sección Environment de Render o ingrésala en la pantalla.',
+    });
+  }
+
+  try {
+    const startTime = Date.now();
+    const prompt = `Translate this phrase from ${sourceLang} to ${targetLang}. Return ONLY the direct translation: "${text}"`;
+    const translated = await generateGeminiText(prompt, 'gemini-3.8-flash');
+    const durationMs = Date.now() - startTime;
+
+    res.json({
+      success: true,
+      originalText: text,
+      translatedText: translated.trim(),
+      durationMs,
+      model: 'gemini-3.8-flash',
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Error al comunicarse con la API de Google Gemini',
+    });
+  }
+});
+
 // 1. Live Translation Endpoint with Gemini 3.8 Flash & Automatic Fallback
 app.post('/api/translate', async (req, res) => {
   const { text, sourceLang, targetLang } = req.body;
@@ -305,6 +404,15 @@ app.post('/api/translate', async (req, res) => {
   // If source and target are the same language code, return original
   if (sourceLang && sourceLang.toLowerCase() === targetLang.toLowerCase()) {
     return res.json({ translatedText: text });
+  }
+
+  if (!process.env.GEMINI_API_KEY) {
+    console.warn('GEMINI_API_KEY missing, translation unavailable');
+    return res.json({
+      translatedText: text,
+      isFallback: true,
+      warning: 'GEMINI_API_KEY_MISSING',
+    });
   }
 
   const prompt = `You are a real-time conversational interpreter in a live video call.
@@ -321,7 +429,7 @@ Speech to translate:
   } catch (err: any) {
     console.warn('Translation models busy or failed, using graceful fallback:', err?.message || err);
     // Return original text gracefully with 200 OK so frontend is uninterrupted
-    res.json({ translatedText: text, isFallback: true });
+    res.json({ translatedText: text, isFallback: true, error: err?.message });
   }
 });
 

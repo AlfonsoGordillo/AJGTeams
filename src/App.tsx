@@ -15,6 +15,7 @@ import { TranscriptDrawer } from './components/TranscriptDrawer';
 import { DocumentTranslationModal } from './components/DocumentTranslationModal';
 import { SettingsModal } from './components/SettingsModal';
 import { DeviceModal } from './components/DeviceModal';
+import { ApiStatusModal } from './components/ApiStatusModal';
 import { BackgroundModal } from './components/BackgroundModal';
 import { ScreenShareModal } from './components/ScreenShareModal';
 import { speechService } from './services/speechService';
@@ -49,6 +50,8 @@ export default function App() {
   const [activeDrawer, setActiveDrawer] = useState<string | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
+  const [isApiModalOpen, setIsApiModalOpen] = useState(false);
+  const [hasGeminiKey, setHasGeminiKey] = useState<boolean | null>(null);
   const [selectedCameraId, setSelectedCameraId] = useState('');
   const [selectedMicId, setSelectedMicId] = useState('');
   const [selectedSpeakerId, setSelectedSpeakerId] = useState('');
@@ -127,8 +130,19 @@ export default function App() {
     }
   };
 
-  // Check URL parameters for invitation link on initial load
+  // Check URL parameters for invitation link on initial load & check API status
+  const checkApiStatus = async () => {
+    try {
+      const res = await fetch('/api/gemini-status');
+      const data = await res.json();
+      setHasGeminiKey(data.hasKey === true);
+    } catch (e) {
+      setHasGeminiKey(false);
+    }
+  };
+
   useEffect(() => {
+    checkApiStatus();
     const urlParams = new URLSearchParams(window.location.search);
     const roomParam = urlParams.get('room');
     if (roomParam) {
@@ -239,6 +253,14 @@ export default function App() {
               ...p,
               isLocal: false,
             }));
+
+            // Auto-pair: if an existing peer speaks a different language, set as our targetLang!
+            const otherPeer = peerParticipants.find((p) => p.spokenLang && p.spokenLang !== updatedUser.spokenLang);
+            if (otherPeer) {
+              updatedUser.targetLang = otherPeer.spokenLang;
+              setCurrentUser((prev) => ({ ...prev, targetLang: otherPeer.spokenLang }));
+            }
+
             setParticipants([updatedUser, ...peerParticipants]);
             if (msg.transcripts) {
               setTranscripts(msg.transcripts);
@@ -251,6 +273,12 @@ export default function App() {
               ...msg.peer,
               isLocal: false,
             };
+
+            // If newcomer speaks a different language, automatically update our translation target!
+            if (newPeer.spokenLang && newPeer.spokenLang !== updatedUser.spokenLang) {
+              setCurrentUser((prev) => ({ ...prev, targetLang: newPeer.spokenLang }));
+            }
+
             setParticipants((prev) => {
               if (prev.some((p) => p.id === newPeer.id)) return prev;
               return [...prev, newPeer];
@@ -339,10 +367,20 @@ export default function App() {
 
         // When speech is final: Translate via Gemini
         try {
+          // Detect recipient's language: target the other participant's language if present
+          let dynamicTarget = user.targetLang;
+          setParticipants((currentPeers) => {
+            const remotePeer = currentPeers.find((p) => !p.isLocal && !p.isVirtual);
+            if (remotePeer && remotePeer.spokenLang && remotePeer.spokenLang !== user.spokenLang) {
+              dynamicTarget = remotePeer.spokenLang;
+            }
+            return currentPeers;
+          });
+
           const translated = await speechService.translateText(
             result.text,
             user.spokenLang,
-            user.targetLang,
+            dynamicTarget,
             isOffline
           );
 
@@ -353,7 +391,7 @@ export default function App() {
             originalText: result.text,
             sourceLang: user.spokenLang,
             translatedText: translated,
-            targetLang: user.targetLang,
+            targetLang: dynamicTarget,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
             isOffline,
           };
@@ -742,8 +780,10 @@ export default function App() {
         participants={participants}
         currentUser={currentUser}
         isOffline={isOffline}
+        hasGeminiKey={hasGeminiKey}
         onOpenInvite={() => setActiveDrawer('invite')}
         onOpenParticipants={() => setActiveDrawer('people')}
+        onOpenApiStatus={() => setIsApiModalOpen(true)}
       />
 
       {/* Main Video Call Grid & Drawers */}
@@ -884,6 +924,13 @@ export default function App() {
         onUseGeminiTTSToggle={(gem) => setUseGeminiTTS(gem)}
         onSelectedVoiceChange={(voice) => setSelectedVoice(voice)}
         onOfflineToggle={(off) => setIsOffline(off)}
+      />
+
+      {/* Gemini API Status & Live Test Modal */}
+      <ApiStatusModal
+        isOpen={isApiModalOpen}
+        onClose={() => setIsApiModalOpen(false)}
+        onKeyUpdated={() => checkApiStatus()}
       />
     </div>
   );

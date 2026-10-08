@@ -12,10 +12,15 @@ import {
   Image as ImageIcon,
   Sliders,
   Volume2,
+  CheckCircle2,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { SUPPORTED_LANGUAGES } from '../constants/languages';
 import { BackgroundModal } from './BackgroundModal';
 import { DeviceModal } from './DeviceModal';
+import { ApiStatusModal } from './ApiStatusModal';
 
 interface LobbyProps {
   initialRoomId: string;
@@ -38,12 +43,18 @@ export const Lobby: React.FC<LobbyProps> = ({ initialRoomId, onJoinMeeting }) =>
       `meet-${Math.random().toString(36).substring(2, 5)}-${Math.random().toString(36).substring(2, 6)}`
   );
   const [userName, setUserName] = useState('');
+  // User's primary native/preferred language (both speaks & listens)
+  const [userLang, setUserLang] = useState('es');
   const [spokenLang, setSpokenLang] = useState('es');
   const [targetLang, setTargetLang] = useState('en');
+  const [showAdvancedLang, setShowAdvancedLang] = useState(false);
+
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
+  const [isApiModalOpen, setIsApiModalOpen] = useState(false);
+  const [hasGeminiKey, setHasGeminiKey] = useState<boolean | null>(null);
   const [selectedCameraId, setSelectedCameraId] = useState('');
   const [selectedMicId, setSelectedMicId] = useState('');
   const [selectedSpeakerId, setSelectedSpeakerId] = useState('');
@@ -57,6 +68,21 @@ export const Lobby: React.FC<LobbyProps> = ({ initialRoomId, onJoinMeeting }) =>
   const [isBgModalOpen, setIsBgModalOpen] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Check Gemini API status
+  const checkApiStatus = async () => {
+    try {
+      const res = await fetch('/api/gemini-status');
+      const data = await res.json();
+      setHasGeminiKey(data.hasKey === true);
+    } catch (e) {
+      setHasGeminiKey(false);
+    }
+  };
+
+  useEffect(() => {
+    checkApiStatus();
+  }, []);
 
   // Request camera and microphone for preview with optional device IDs
   const acquireStream = async (camId?: string, micId?: string) => {
@@ -161,9 +187,36 @@ export const Lobby: React.FC<LobbyProps> = ({ initialRoomId, onJoinMeeting }) =>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-950/40 px-3 py-1.5 rounded-full border border-emerald-500/30">
-          <ShieldCheck className="w-4 h-4" />
-          <span>WebRTC P2P Seguro</span>
+        <div className="flex items-center gap-2.5">
+          {/* Gemini API Key Status Badge */}
+          <button
+            type="button"
+            onClick={() => setIsApiModalOpen(true)}
+            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-all cursor-pointer ${
+              hasGeminiKey
+                ? 'text-emerald-300 bg-emerald-950/60 border-emerald-500/40 hover:bg-emerald-900/60'
+                : 'text-red-300 bg-red-950/60 border-red-500/40 hover:bg-red-900/60 animate-pulse'
+            }`}
+            title="Verificar estado de Gemini API Key y probar traducción"
+          >
+            {hasGeminiKey ? (
+              <>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Gemini IA: Activo</span>
+              </>
+            ) : (
+              <>
+                <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                <span className="font-semibold">Gemini API Key Requerida</span>
+              </>
+            )}
+          </button>
+
+          <div className="hidden sm:flex items-center gap-2 text-xs text-emerald-400 bg-emerald-950/40 px-3 py-1.5 rounded-full border border-emerald-500/30">
+            <ShieldCheck className="w-4 h-4" />
+            <span>WebRTC P2P Seguro</span>
+          </div>
         </div>
       </header>
 
@@ -327,54 +380,92 @@ export const Lobby: React.FC<LobbyProps> = ({ initialRoomId, onJoinMeeting }) =>
               />
             </div>
 
-            {/* Language Pair Selectors */}
+            {/* Unified Language Selector */}
             <div className="pt-2 border-t border-gray-700/60 space-y-3">
-              <div className="flex items-center gap-1.5 text-xs text-blue-300 font-medium">
-                <Globe className="w-3.5 h-3.5" />
-                <span>Configuración de Traducción Doble Vía</span>
+              <div>
+                <label className="block text-xs font-semibold text-gray-200 mb-1 flex items-center gap-1.5">
+                  <Globe className="w-4 h-4 text-blue-400" />
+                  <span>Mi Idioma (Hablo y Escucho en):</span>
+                </label>
+                <select
+                  value={userLang}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setUserLang(val);
+                    setSpokenLang(val);
+                    setTargetLang(val.startsWith('es') ? 'en' : 'es');
+                  }}
+                  className="w-full bg-[#1e1f22] text-sm text-white font-medium p-2.5 rounded-xl border border-gray-700 focus:outline-none focus:border-blue-500 cursor-pointer"
+                >
+                  {SUPPORTED_LANGUAGES.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.flag} {lang.name} ({lang.nativeName})
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-[11px] text-gray-400 mb-1">
-                    Hablo en:
-                  </label>
-                  <select
-                    value={spokenLang}
-                    onChange={(e) => setSpokenLang(e.target.value)}
-                    className="w-full bg-[#1e1f22] text-xs text-white p-2 rounded-lg border border-gray-700 focus:outline-none focus:border-blue-500"
-                  >
-                    {SUPPORTED_LANGUAGES.map((lang) => (
-                      <option key={lang.code} value={lang.code}>
-                        {lang.flag} {lang.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {/* Informative explanation banner */}
+              <div className="bg-[#1e1f22] p-2.5 rounded-xl border border-gray-700/60 text-[11px] text-gray-300 space-y-1">
+                <p className="flex items-center gap-1 text-emerald-400 font-semibold">
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>Interpretación Automática Bidireccional</span>
+                </p>
+                <p className="text-gray-400 leading-relaxed">
+                  Tú hablas y escuchas en tu idioma. Tu interlocutor elegirá el suyo (ej. Inglés) y la IA traducirá y doblará la voz automáticamente en ambas direcciones.
+                </p>
+              </div>
 
-                <div>
-                  <label className="block text-[11px] text-gray-400 mb-1">
-                    Escucho / Leo en:
-                  </label>
-                  <select
-                    value={targetLang}
-                    onChange={(e) => setTargetLang(e.target.value)}
-                    className="w-full bg-[#1e1f22] text-xs text-white p-2 rounded-lg border border-gray-700 focus:outline-none focus:border-blue-500"
-                  >
-                    {SUPPORTED_LANGUAGES.map((lang) => (
-                      <option key={lang.code} value={lang.code}>
-                        {lang.flag} {lang.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {/* Advanced mode optional toggle */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedLang(!showAdvancedLang)}
+                  className="text-[11px] text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                >
+                  <span>{showAdvancedLang ? 'Ocultar opciones avanzadas' : 'Ajustes avanzados de idioma (opcional)'}</span>
+                  {showAdvancedLang ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+
+                {showAdvancedLang && (
+                  <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-gray-800 animate-in fade-in">
+                    <div>
+                      <label className="block text-[10px] text-gray-400 mb-1">Hablo en:</label>
+                      <select
+                        value={spokenLang}
+                        onChange={(e) => setSpokenLang(e.target.value)}
+                        className="w-full bg-[#1e1f22] text-xs text-white p-2 rounded-lg border border-gray-700"
+                      >
+                        {SUPPORTED_LANGUAGES.map((lang) => (
+                          <option key={lang.code} value={lang.code}>
+                            {lang.flag} {lang.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-gray-400 mb-1">Escucho / Leo en:</label>
+                      <select
+                        value={targetLang}
+                        onChange={(e) => setTargetLang(e.target.value)}
+                        className="w-full bg-[#1e1f22] text-xs text-white p-2 rounded-lg border border-gray-700"
+                      >
+                        {SUPPORTED_LANGUAGES.map((lang) => (
+                          <option key={lang.code} value={lang.code}>
+                            {lang.flag} {lang.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Submit Button */}
             <button
               type="submit"
-              className="w-full mt-4 py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium text-sm shadow-lg flex items-center justify-center gap-2 transition-all"
+              className="w-full mt-4 py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium text-sm shadow-lg flex items-center justify-center gap-2 transition-all cursor-pointer"
             >
               <span>Unirse ahora</span>
               <ArrowRight className="w-4 h-4" />
@@ -384,8 +475,7 @@ export const Lobby: React.FC<LobbyProps> = ({ initialRoomId, onJoinMeeting }) =>
           {/* Quick Explanatory Note */}
           <div className="mt-4 p-3 bg-blue-950/30 rounded-xl border border-blue-600/20 text-[11px] text-gray-300 leading-relaxed">
             <span className="font-semibold text-blue-300">💡 Al entrar: </span>
-            Recibirás un enlace de invitación generado para enviar por WhatsApp o correo a tu
-            interlocutor en otra ciudad.
+            Podrás compartir el enlace de invitación para que tu interlocutor se una desde su computadora o celular.
           </div>
         </div>
       </main>
@@ -411,6 +501,13 @@ export const Lobby: React.FC<LobbyProps> = ({ initialRoomId, onJoinMeeting }) =>
         onSelectMic={handleSelectMic}
         onSelectSpeaker={handleSelectSpeaker}
         activeStream={stream}
+      />
+
+      {/* Gemini API Status & Testing Modal */}
+      <ApiStatusModal
+        isOpen={isApiModalOpen}
+        onClose={() => setIsApiModalOpen(false)}
+        onKeyUpdated={() => checkApiStatus()}
       />
 
       {/* Footer */}

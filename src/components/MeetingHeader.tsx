@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, Sparkles, Users, Copy, Check, Wifi, Globe2 } from 'lucide-react';
+import { ShieldCheck, Sparkles, Users, Copy, Check, Wifi, Globe2, AlertTriangle } from 'lucide-react';
 import { Participant } from '../types';
 import { getLanguageByCode } from '../constants/languages';
 import { getPublicMeetingUrl } from '../utils/url';
@@ -9,8 +9,10 @@ interface MeetingHeaderProps {
   participants: Participant[];
   currentUser: Participant;
   isOffline: boolean;
+  hasGeminiKey?: boolean | null;
   onOpenInvite: () => void;
   onOpenParticipants: () => void;
+  onOpenApiStatus?: () => void;
 }
 
 export const MeetingHeader: React.FC<MeetingHeaderProps> = ({
@@ -18,8 +20,10 @@ export const MeetingHeader: React.FC<MeetingHeaderProps> = ({
   participants,
   currentUser,
   isOffline,
+  hasGeminiKey = true,
   onOpenInvite,
   onOpenParticipants,
+  onOpenApiStatus,
 }) => {
   const [time, setTime] = useState('');
   const [copied, setCopied] = useState(false);
@@ -77,14 +81,33 @@ export const MeetingHeader: React.FC<MeetingHeaderProps> = ({
           </div>
         </div>
 
-        {/* Translation Status Badge */}
-        <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-950/60 border border-blue-500/30 text-blue-300 text-xs font-medium">
-          <Sparkles className="w-3.5 h-3.5 text-blue-400 animate-spin-slow" />
-          <span>Gemini 3.8 Traducción Simultánea</span>
-          <span className="bg-blue-900/80 px-1.5 py-0.5 rounded text-[10px] text-blue-200 uppercase font-mono">
-            {spokenLangObj.flag} {spokenLangObj.code} ➔ {targetLangObj.flag} {targetLangObj.code}
-          </span>
-        </div>
+        {/* Translation Status Badge with API Key Health */}
+        <button
+          type="button"
+          onClick={onOpenApiStatus}
+          className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors cursor-pointer ${
+            hasGeminiKey
+              ? 'bg-blue-950/60 border-blue-500/30 text-blue-300 hover:bg-blue-900/60'
+              : 'bg-red-950/60 border-red-500/40 text-red-300 hover:bg-red-900/60 animate-pulse'
+          }`}
+          title="Haz clic para comprobar la API Key de Gemini y probar traducciones"
+        >
+          {hasGeminiKey ? (
+            <>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+              <span>Gemini 3.8: Activo</span>
+              <span className="bg-blue-900/80 px-1.5 py-0.5 rounded text-[10px] text-blue-200 uppercase font-mono">
+                {spokenLangObj.flag} {spokenLangObj.code} ➔ {targetLangObj.flag} {targetLangObj.code}
+              </span>
+            </>
+          ) : (
+            <>
+              <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+              <span className="font-semibold text-red-200">Sin API Key (Clic para activar)</span>
+            </>
+          )}
+        </button>
 
         {/* Offline Badge if active */}
         {isOffline && (
