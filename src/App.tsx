@@ -786,6 +786,7 @@ export default function App() {
         onOpenInvite={() => setActiveDrawer('invite')}
         onOpenParticipants={() => setActiveDrawer('people')}
         onOpenApiStatus={() => setIsApiModalOpen(true)}
+        onToggleOffline={() => setIsOffline(false)}
       />
 
       {/* Main Video Call Grid & Drawers */}

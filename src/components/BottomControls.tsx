@@ -143,7 +143,7 @@ export const BottomControls: React.FC<BottomControlsProps> = ({
           ) : (
             <Volume2 className="w-3.5 h-3.5 text-gray-400" />
           )}
-          <span>{muteOriginalAudio ? 'Solo Traducción Activo' : 'Apagar voz original'}</span>
+          <span>{muteOriginalAudio ? '🔇 Voz silenciada (Clic para oír)' : 'Silenciar voz original'}</span>
         </button>
 
         <button

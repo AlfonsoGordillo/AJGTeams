@@ -13,6 +13,7 @@ interface MeetingHeaderProps {
   onOpenInvite: () => void;
   onOpenParticipants: () => void;
   onOpenApiStatus?: () => void;
+  onToggleOffline?: () => void;
 }
 
 export const MeetingHeader: React.FC<MeetingHeaderProps> = ({
@@ -24,6 +25,7 @@ export const MeetingHeader: React.FC<MeetingHeaderProps> = ({
   onOpenInvite,
   onOpenParticipants,
   onOpenApiStatus,
+  onToggleOffline,
 }) => {
   const [time, setTime] = useState('');
   const [copied, setCopied] = useState(false);
@@ -111,10 +113,15 @@ export const MeetingHeader: React.FC<MeetingHeaderProps> = ({
 
         {/* Offline Badge if active */}
         {isOffline && (
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-950/60 border border-amber-600/40 text-amber-300 text-xs">
-            <Wifi className="w-3 h-3 text-amber-400" />
-            <span>Modo Offline</span>
-          </div>
+          <button
+            type="button"
+            onClick={onToggleOffline}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-950/80 hover:bg-amber-900 border border-amber-600/60 text-amber-300 text-xs cursor-pointer shadow-sm animate-pulse transition-all"
+            title="Haz clic para salir del Modo Offline y volver a la traducción con Gemini IA en vivo"
+          >
+            <Wifi className="w-3.5 h-3.5 text-amber-400" />
+            <span className="font-semibold">Modo Offline (Clic para desactivar)</span>
+          </button>
         )}
       </div>
 
