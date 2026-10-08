@@ -71,6 +71,12 @@ export default function App() {
   const webrtcRef = useRef<WebRTCManager | null>(null);
   const subtitleTimeoutRef = useRef<any>(null);
 
+  const currentUserRef = useRef<Participant>(currentUser);
+  currentUserRef.current = currentUser;
+
+  const participantsRef = useRef<Participant[]>(participants);
+  participantsRef.current = participants;
+
   // Device switching handlers for active call
   const handleSelectCamera = async (deviceId: string) => {
     setSelectedCameraId(deviceId);
@@ -350,16 +356,26 @@ export default function App() {
         );
         broadcastParticipantUpdate({ isSpeaking: true });
 
+        const activeUser = currentUserRef.current;
+        const currentPeers = participantsRef.current;
+
+        // Dynamic target language: what language does the other person in the room speak?
+        const remotePeer = currentPeers.find((p) => !p.isLocal && !p.isVirtual);
+        let dynamicTarget = remotePeer?.spokenLang || activeUser.targetLang;
+        if (dynamicTarget === activeUser.spokenLang) {
+          dynamicTarget = activeUser.spokenLang.startsWith('es') ? 'en' : 'es';
+        }
+
         // Interim live caption for local preview
         if (!result.isFinal) {
           setActiveSubtitle({
             id: 'interim',
-            speakerId: user.id,
-            speakerName: `${user.name} (Hablando...)`,
+            speakerId: activeUser.id,
+            speakerName: `${activeUser.name} (Hablando...)`,
             originalText: result.text,
-            sourceLang: user.spokenLang,
+            sourceLang: activeUser.spokenLang,
             translatedText: 'Traduciendo en tiempo real...',
-            targetLang: user.targetLang,
+            targetLang: dynamicTarget,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
           });
           return;
@@ -367,29 +383,19 @@ export default function App() {
 
         // When speech is final: Translate via Gemini
         try {
-          // Detect recipient's language: target the other participant's language if present
-          let dynamicTarget = user.targetLang;
-          setParticipants((currentPeers) => {
-            const remotePeer = currentPeers.find((p) => !p.isLocal && !p.isVirtual);
-            if (remotePeer && remotePeer.spokenLang && remotePeer.spokenLang !== user.spokenLang) {
-              dynamicTarget = remotePeer.spokenLang;
-            }
-            return currentPeers;
-          });
-
           const translated = await speechService.translateText(
             result.text,
-            user.spokenLang,
+            activeUser.spokenLang,
             dynamicTarget,
             isOffline
           );
 
           const transcriptItem: TranscriptItem = {
             id: `tr-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-            speakerId: user.id,
-            speakerName: user.name,
+            speakerId: activeUser.id,
+            speakerName: activeUser.name,
             originalText: result.text,
-            sourceLang: user.spokenLang,
+            sourceLang: activeUser.spokenLang,
             translatedText: translated,
             targetLang: dynamicTarget,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),

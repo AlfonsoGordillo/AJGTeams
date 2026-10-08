@@ -104,7 +104,7 @@ export class SpeechService {
           lastInterim = interimText;
           this.onResultCallback({ text: interimText.trim(), isFinal: false });
 
-          // Auto-finalize when user pauses for 1.1 seconds (prevents getting stuck in 'Hablando...')
+          // Auto-finalize when user pauses for 750ms (prevents getting stuck in 'Hablando...')
           if (silenceTimer) clearTimeout(silenceTimer);
           silenceTimer = setTimeout(() => {
             if (lastInterim && lastInterim.trim().length > 0 && this.onResultCallback) {
@@ -112,7 +112,7 @@ export class SpeechService {
               lastInterim = '';
               this.onResultCallback({ text: textToSend, isFinal: true });
             }
-          }, 1100);
+          }, 750);
         }
       };
 
