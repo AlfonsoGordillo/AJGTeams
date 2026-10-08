@@ -80,6 +80,9 @@ export class SpeechService {
       this.recognition.interimResults = true;
       this.recognition.maxAlternatives = 1;
 
+      let lastInterim = '';
+      let silenceTimer: any = null;
+
       this.recognition.onresult = (event: any) => {
         let interimText = '';
         let finalText = '';
@@ -94,9 +97,22 @@ export class SpeechService {
         }
 
         if (finalText && this.onResultCallback) {
+          if (silenceTimer) clearTimeout(silenceTimer);
+          lastInterim = '';
           this.onResultCallback({ text: finalText.trim(), isFinal: true });
         } else if (interimText && this.onResultCallback) {
+          lastInterim = interimText;
           this.onResultCallback({ text: interimText.trim(), isFinal: false });
+
+          // Auto-finalize when user pauses for 1.1 seconds (prevents getting stuck in 'Hablando...')
+          if (silenceTimer) clearTimeout(silenceTimer);
+          silenceTimer = setTimeout(() => {
+            if (lastInterim && lastInterim.trim().length > 0 && this.onResultCallback) {
+              const textToSend = lastInterim.trim();
+              lastInterim = '';
+              this.onResultCallback({ text: textToSend, isFinal: true });
+            }
+          }, 1100);
         }
       };
 

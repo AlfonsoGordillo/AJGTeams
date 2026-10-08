@@ -17,6 +17,10 @@ export class WebRTCManager {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:stun.services.mozilla.com' },
   ];
 
   constructor(options: WebRTCOptions) {
@@ -64,8 +68,12 @@ export class WebRTCManager {
     }
 
     pc.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        this.onRemoteStream(peerId, event.streams[0]);
+      let remoteStream = event.streams && event.streams[0];
+      if (!remoteStream && event.track) {
+        remoteStream = new MediaStream([event.track]);
+      }
+      if (remoteStream) {
+        this.onRemoteStream(peerId, remoteStream);
       }
     };
 

@@ -22,7 +22,7 @@ import {
   Sliders,
 } from 'lucide-react';
 import { Participant } from '../types';
-import { getLanguageByCode } from '../constants/languages';
+import { getLanguageByCode, SUPPORTED_LANGUAGES } from '../constants/languages';
 
 interface BottomControlsProps {
   currentUser: Participant;
@@ -50,6 +50,7 @@ interface BottomControlsProps {
   onOpenDocumentStudio: () => void;
   onLeaveCall: () => void;
   onSendQuickSpeech: (text: string) => void;
+  onSpokenLangChange?: (lang: string) => void;
 }
 
 export const BottomControls: React.FC<BottomControlsProps> = ({
@@ -77,6 +78,7 @@ export const BottomControls: React.FC<BottomControlsProps> = ({
   onOpenDocumentStudio,
   onLeaveCall,
   onSendQuickSpeech,
+  onSpokenLangChange,
 }) => {
   const [quickInput, setQuickInput] = useState('');
   const [showQuickInput, setShowQuickInput] = useState(false);
@@ -97,21 +99,30 @@ export const BottomControls: React.FC<BottomControlsProps> = ({
     <div className="relative h-20 bg-[#202124] px-4 sm:px-6 flex items-center justify-between border-t border-gray-800 z-30 select-none">
       {/* Left: Language Pair info, Quick Speech, Solo traducción toggle */}
       <div className="hidden lg:flex items-center gap-2.5">
-        <button
-          onClick={onOpenSettings}
-          className="flex items-center gap-2 bg-[#303134] hover:bg-[#3c4043] text-gray-200 px-3 py-1.5 rounded-full text-xs font-medium border border-gray-700 transition-colors"
-          title="Cambiar idiomas de traducción"
-        >
-          <span className="flex items-center gap-1">
-            <span>{spokenLangObj.flag}</span>
-            <span className="font-semibold">{spokenLangObj.code.toUpperCase()}</span>
-          </span>
+        <div className="flex items-center gap-1.5 bg-[#303134] text-gray-200 px-3 py-1.5 rounded-full text-xs font-medium border border-gray-700">
+          <span className="text-gray-400 text-[11px]">Hablo:</span>
+          <select
+            value={currentUser.spokenLang}
+            onChange={(e) => onSpokenLangChange && onSpokenLangChange(e.target.value)}
+            className="bg-[#202124] text-white font-semibold text-xs px-2 py-0.5 rounded-md border border-gray-600 focus:outline-none cursor-pointer"
+            title="Cambiar el idioma en el que estás hablando"
+          >
+            {SUPPORTED_LANGUAGES.map((lang) => (
+              <option key={lang.code} value={lang.code} className="bg-[#202124] text-white">
+                {lang.flag} {lang.name}
+              </option>
+            ))}
+          </select>
           <span className="text-gray-400">➔</span>
-          <span className="flex items-center gap-1 text-emerald-400">
+          <button
+            onClick={onOpenSettings}
+            className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 transition-colors"
+            title="Haz clic para cambiar el idioma destino o ver opciones"
+          >
             <span>{targetLangObj.flag}</span>
-            <span className="font-semibold">{targetLangObj.code.toUpperCase()}</span>
-          </span>
-        </button>
+            <span className="font-semibold">{targetLangObj.name}</span>
+          </button>
+        </div>
 
         {/* Mute original voice shortcut button */}
         <button

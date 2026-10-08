@@ -461,13 +461,15 @@ export default function App() {
     // If incoming speech is from another participant or Sarah:
     if (isDubbingActive && item.speakerId !== user.id) {
       if (item.speakerId === 'virtual-partner') {
-        // If muteOriginalAudio is true, speak the Spanish translation
+        // If muteOriginalAudio is true, speak the translated voice
         // If false, speak Sarah's natural English voice!
         const textToSpeak = muteOriginalAudio ? item.translatedText : item.originalText;
-        const langToSpeak = muteOriginalAudio ? user.spokenLang : item.sourceLang;
+        const langToSpeak = muteOriginalAudio ? (item.targetLang || user.spokenLang) : item.sourceLang;
         speechService.speakTranslatedText(textToSpeak, langToSpeak, useGeminiTTS);
       } else {
-        speechService.speakTranslatedText(item.translatedText, user.spokenLang, useGeminiTTS);
+        // Speak translated text in the language it was translated into (e.g. Spanish for a Spanish listener, English for an English listener)
+        const voiceLang = item.targetLang || user.spokenLang;
+        speechService.speakTranslatedText(item.translatedText, voiceLang, useGeminiTTS);
       }
     }
   };
@@ -849,6 +851,14 @@ export default function App() {
         onOpenDocumentStudio={() => setIsDocumentStudioOpen(true)}
         onLeaveCall={handleLeaveCall}
         onSendQuickSpeech={handleSendQuickSpeech}
+        onSpokenLangChange={(lang) => {
+          setCurrentUser((p) => ({ ...p, spokenLang: lang }));
+          setParticipants((prev) =>
+            prev.map((p) => (p.isLocal ? { ...p, spokenLang: lang } : p))
+          );
+          speechService.setSpokenLanguage(lang);
+          broadcastParticipantUpdate({ spokenLang: lang });
+        }}
       />
 
       {/* Background Modal */}
