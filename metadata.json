@@ -1,0 +1,12 @@
+{
+  "name": "MeetTranslate - Google Meet con Traducción Simultánea en Tiempo Real",
+  "description": "Videollamadas estilo Google Meet con traducción simultánea bidireccional por voz y subtítulos automáticos en pantalla usando modelos Gemini, transcripción interactiva, enlace de invitación y traducción de documentos.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "display-capture"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
