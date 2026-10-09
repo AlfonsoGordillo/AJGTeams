@@ -51,6 +51,8 @@ interface BottomControlsProps {
   onLeaveCall: () => void;
   onSendQuickSpeech: (text: string) => void;
   onSpokenLangChange?: (lang: string) => void;
+  isSpeakerOn?: boolean;
+  onToggleSpeaker?: () => void;
 }
 
 export const BottomControls: React.FC<BottomControlsProps> = ({
@@ -79,6 +81,8 @@ export const BottomControls: React.FC<BottomControlsProps> = ({
   onLeaveCall,
   onSendQuickSpeech,
   onSpokenLangChange,
+  isSpeakerOn = true,
+  onToggleSpeaker,
 }) => {
   const [quickInput, setQuickInput] = useState('');
   const [showQuickInput, setShowQuickInput] = useState(false);
@@ -173,6 +177,32 @@ export const BottomControls: React.FC<BottomControlsProps> = ({
           title={currentUser.isMuted ? 'Activar micrófono' : 'Desactivar micrófono'}
         >
           {currentUser.isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+        </button>
+
+        {/* Speaker / Parlante toggle (Right next to Mic!) */}
+        <button
+          onClick={onToggleSpeaker}
+          className={`relative p-3 sm:p-3.5 rounded-full text-white transition-all shadow-md ${
+            isSpeakerOn
+              ? 'bg-emerald-600 hover:bg-emerald-500 ring-2 ring-emerald-400/50 shadow-emerald-950/40'
+              : 'bg-[#ea4335] hover:bg-[#d93025] ring-2 ring-red-400/50 animate-pulse'
+          }`}
+          title={
+            isSpeakerOn
+              ? 'Parlante de llamada: ACTIVO (ON). Haz clic para probar sonido o silenciar'
+              : 'Parlante de llamada: SILENCIADO (OFF). Haz clic para activar el sonido'
+          }
+        >
+          {isSpeakerOn ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+          <span
+            className={`absolute -bottom-1 -right-1 text-[9px] font-bold px-1 rounded-full uppercase leading-tight ${
+              isSpeakerOn
+                ? 'bg-emerald-950 text-emerald-300 border border-emerald-400'
+                : 'bg-red-950 text-red-300 border border-red-500'
+            }`}
+          >
+            {isSpeakerOn ? 'ON' : 'OFF'}
+          </span>
         </button>
 
         {/* Camera toggle */}
