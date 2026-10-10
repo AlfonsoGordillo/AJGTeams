@@ -9,6 +9,45 @@ interface VirtualBackgroundVideoProps {
   isMuted?: boolean;
 }
 
+// Helper to resolve the SelfieSegmentation constructor in browser environments
+async function getSelfieSegmentationClass(): Promise<any> {
+  if (typeof window !== 'undefined' && (window as any).SelfieSegmentation) {
+    return (window as any).SelfieSegmentation;
+  }
+
+  try {
+    const mp = await import('@mediapipe/selfie_segmentation');
+    const Cls =
+      (mp as any).SelfieSegmentation ||
+      ((mp as any).default && (mp as any).default.SelfieSegmentation) ||
+      (typeof window !== 'undefined' && (window as any).SelfieSegmentation);
+    if (Cls) return Cls;
+  } catch (err) {
+    console.warn('Direct dynamic import of @mediapipe/selfie_segmentation warning:', err);
+  }
+
+  // Fallback: dynamically load via script if not yet ready
+  if (typeof window !== 'undefined' && !(window as any).SelfieSegmentation) {
+    await new Promise<void>((resolve, reject) => {
+      const existing = document.querySelector('script[data-mp-selfie]');
+      if (existing) {
+        existing.addEventListener('load', () => resolve());
+        existing.addEventListener('error', (e) => reject(e));
+        return;
+      }
+      const script = document.createElement('script');
+      script.setAttribute('data-mp-selfie', 'true');
+      script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js';
+      script.crossOrigin = 'anonymous';
+      script.onload = () => resolve();
+      script.onerror = (e) => reject(e);
+      document.head.appendChild(script);
+    });
+  }
+
+  return typeof window !== 'undefined' ? (window as any).SelfieSegmentation : null;
+}
+
 export const VirtualBackgroundVideo: React.FC<VirtualBackgroundVideoProps> = ({
   stream,
   backgroundType = 'none',
@@ -23,18 +62,44 @@ export const VirtualBackgroundVideo: React.FC<VirtualBackgroundVideoProps> = ({
   const selfieSegmentationRef = useRef<any>(null);
   const [modelReady, setModelReady] = useState(false);
   const bgImgRef = useRef<HTMLImageElement | null>(null);
+  const isSendingRef = useRef(false);
 
-  // Preload background image if provided
+  // Store latest props in refs so callbacks never get stale
+  const bgTypeRef = useRef(backgroundType);
+  const bgUrlRef = useRef(backgroundUrl);
+  const isLocalRef = useRef(isLocal);
+  const isScreenShareRef = useRef(isScreenShare);
+
+  useEffect(() => {
+    bgTypeRef.current = backgroundType;
+  }, [backgroundType]);
+
+  useEffect(() => {
+    bgUrlRef.current = backgroundUrl;
+  }, [backgroundUrl]);
+
+  useEffect(() => {
+    isLocalRef.current = isLocal;
+  }, [isLocal]);
+
+  useEffect(() => {
+    isScreenShareRef.current = isScreenShare;
+  }, [isScreenShare]);
+
+  // Preload background image if provided (handles both remote URLs and local data/blob URLs)
   useEffect(() => {
     if ((backgroundType === 'preset' || backgroundType === 'custom') && backgroundUrl) {
       const img = new Image();
-      img.crossOrigin = 'anonymous';
+      // CRITICAL: Do NOT set crossOrigin on data: or blob: URIs to avoid browser taint/onerror
+      if (!backgroundUrl.startsWith('data:') && !backgroundUrl.startsWith('blob:')) {
+        img.crossOrigin = 'anonymous';
+      }
       img.src = backgroundUrl;
       img.onload = () => {
         bgImgRef.current = img;
       };
       img.onerror = () => {
-        console.warn('Failed to load background image:', backgroundUrl);
+        console.warn('Failed to load virtual background image:', backgroundUrl.slice(0, 60));
         bgImgRef.current = null;
       };
     } else {
@@ -42,7 +107,7 @@ export const VirtualBackgroundVideo: React.FC<VirtualBackgroundVideoProps> = ({
     }
   }, [backgroundType, backgroundUrl]);
 
-  // Bind stream to video element
+  // Bind media stream to internal hidden video element
   useEffect(() => {
     const video = videoRef.current;
     if (video) {
@@ -55,38 +120,45 @@ export const VirtualBackgroundVideo: React.FC<VirtualBackgroundVideoProps> = ({
     }
   }, [stream]);
 
-  // Initialize MediaPipe SelfieSegmentation if background effect requested
+  // Initialize MediaPipe SelfieSegmentation (one instance per component lifecycle)
   useEffect(() => {
-    const needsSegmentation = backgroundType !== 'none';
-    if (!needsSegmentation) {
-      setModelReady(false);
-      return;
-    }
-
     let isMounted = true;
 
     async function initMediaPipe() {
       try {
-        const { SelfieSegmentation } = await import('@mediapipe/selfie_segmentation');
-        const segmenter = new SelfieSegmentation({
-          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
+        const SelfieClass = await getSelfieSegmentationClass();
+        if (!SelfieClass) {
+          throw new Error('SelfieSegmentation constructor not found');
+        }
+
+        const segmenter = new SelfieClass({
+          locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
         });
 
         segmenter.setOptions({
-          modelSelection: 1, // Landscape model (optimized for video calls)
+          modelSelection: 1, // 1 = landscape model optimized for video calls
           selfieMode: isLocal && !isScreenShare,
         });
 
-        segmenter.onResults((results) => {
+        segmenter.onResults((results: any) => {
           if (!isMounted) return;
           renderSegmentedFrame(results);
         });
 
+        // Pre-initialize
+        if (segmenter.initialize) {
+          await segmenter.initialize();
+        }
+
         selfieSegmentationRef.current = segmenter;
-        if (isMounted) setModelReady(true);
+        if (isMounted) {
+          setModelReady(true);
+        }
       } catch (err) {
-        console.warn('MediaPipe initialization fallback to Canvas portrait blend:', err);
-        if (isMounted) setModelReady(false);
+        console.warn('MediaPipe initialization warning (will use smooth portrait fallback):', err);
+        if (isMounted) {
+          setModelReady(false);
+        }
       }
     }
 
@@ -103,9 +175,9 @@ export const VirtualBackgroundVideo: React.FC<VirtualBackgroundVideoProps> = ({
         selfieSegmentationRef.current = null;
       }
     };
-  }, [backgroundType, isLocal, isScreenShare]);
+  }, [isLocal, isScreenShare]);
 
-  // Render loop using MediaPipe results
+  // Render loop using MediaPipe AI segmentation mask
   const renderSegmentedFrame = (results: any) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -114,52 +186,58 @@ export const VirtualBackgroundVideo: React.FC<VirtualBackgroundVideoProps> = ({
 
     const width = canvas.width;
     const height = canvas.height;
+    const currentBgType = bgTypeRef.current;
 
     ctx.save();
     ctx.clearRect(0, 0, width, height);
 
-    if (backgroundType === 'blur') {
-      // Draw original video blurred as background
-      ctx.filter = 'blur(14px)';
-      ctx.drawImage(results.image, 0, 0, width, height);
-      ctx.filter = 'none';
-
-      // Draw crisp person using mask on top
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.drawImage(results.segmentationMask, 0, 0, width, height);
-      ctx.globalCompositeOperation = 'destination-over';
-      ctx.drawImage(results.image, 0, 0, width, height);
-    } else if (backgroundType === 'preset' || backgroundType === 'custom') {
-      // 1. Draw person mask
+    if (currentBgType === 'blur') {
+      // 1. Draw segmentation mask
       ctx.drawImage(results.segmentationMask, 0, 0, width, height);
 
-      // 2. Keep only the person pixels
+      // 2. Keep only the sharp person pixels
       ctx.globalCompositeOperation = 'source-in';
       ctx.drawImage(results.image, 0, 0, width, height);
 
-      // 3. Draw the background image behind the person
+      // 3. Draw blurred camera video behind person
       ctx.globalCompositeOperation = 'destination-over';
-      if (bgImgRef.current && bgImgRef.current.complete) {
-        // Draw background maintaining aspect ratio cover
-        const img = bgImgRef.current;
-        const scale = Math.max(width / img.width, height / img.height);
-        const x = width / 2 - (img.width / 2) * scale;
-        const y = height / 2 - (img.height / 2) * scale;
-        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+      ctx.filter = 'blur(16px)';
+      ctx.drawImage(results.image, 0, 0, width, height);
+      ctx.filter = 'none';
+    } else if (currentBgType === 'preset' || currentBgType === 'custom') {
+      // 1. Draw segmentation mask
+      ctx.drawImage(results.segmentationMask, 0, 0, width, height);
+
+      // 2. Keep only the sharp person pixels
+      ctx.globalCompositeOperation = 'source-in';
+      ctx.drawImage(results.image, 0, 0, width, height);
+
+      // 3. Draw the background image behind person
+      ctx.globalCompositeOperation = 'destination-over';
+      const img = bgImgRef.current;
+      if (img && img.complete && img.naturalWidth > 0) {
+        const scale = Math.max(width / img.naturalWidth, height / img.naturalHeight);
+        const x = width / 2 - (img.naturalWidth / 2) * scale;
+        const y = height / 2 - (img.naturalHeight / 2) * scale;
+        ctx.drawImage(img, x, y, img.naturalWidth * scale, img.naturalHeight * scale);
       } else {
-        // Fallback dark gradient if image still loading
+        // Fallback modern studio dark gradient
         const grad = ctx.createLinearGradient(0, 0, width, height);
         grad.addColorStop(0, '#1e293b');
-        grad.addColorStop(1, '#0f172a');
+        grad.addColorStop(0.5, '#0f172a');
+        grad.addColorStop(1, '#020617');
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, width, height);
       }
+    } else {
+      // Fallback direct draw
+      ctx.drawImage(results.image, 0, 0, width, height);
     }
 
     ctx.restore();
   };
 
-  // Active frame sending loop
+  // Active rendering frame loop
   useEffect(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -171,17 +249,22 @@ export const VirtualBackgroundVideo: React.FC<VirtualBackgroundVideoProps> = ({
       if (!active) return;
 
       if (video.readyState >= 2 && video.videoWidth > 0) {
+        // Keep canvas dimensions synced with source video resolution
         if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
         }
 
-        if (backgroundType === 'none' || isScreenShare) {
-          // Direct render
+        const currentBgType = bgTypeRef.current;
+        const screenShare = isScreenShareRef.current;
+        const local = isLocalRef.current;
+
+        if (currentBgType === 'none' || screenShare) {
+          // Direct render without virtual background
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.save();
-            if (isLocal && !isScreenShare) {
+            if (local && !screenShare) {
               ctx.scale(-1, 1);
               ctx.translate(-canvas.width, 0);
             }
@@ -189,15 +272,20 @@ export const VirtualBackgroundVideo: React.FC<VirtualBackgroundVideoProps> = ({
             ctx.restore();
           }
         } else if (modelReady && selfieSegmentationRef.current) {
-          // Send frame to MediaPipe
-          try {
-            await selfieSegmentationRef.current.send({ image: video });
-          } catch (e) {
-            // fallback frame
+          // Dispatch frame to MediaPipe AI (with concurrency throttle)
+          if (!isSendingRef.current) {
+            isSendingRef.current = true;
+            try {
+              await selfieSegmentationRef.current.send({ image: video });
+            } catch (e) {
+              // Ignore transient send errors
+            } finally {
+              isSendingRef.current = false;
+            }
           }
         } else {
-          // Graceful real-time Canvas fallback while model loads or if MediaPipe unavailable:
-          // Seamlessly composites the background with soft portrait gradient mask
+          // Immediate Canvas fallback while AI model loads or if WebAssembly is unavailable:
+          // Immediately displays the chosen or uploaded background with smooth portrait composite
           const ctx = canvas.getContext('2d');
           if (ctx) {
             const w = canvas.width;
@@ -205,41 +293,44 @@ export const VirtualBackgroundVideo: React.FC<VirtualBackgroundVideoProps> = ({
             ctx.save();
             ctx.clearRect(0, 0, w, h);
 
-            // 1. Draw background image
-            if (bgImgRef.current && bgImgRef.current.complete) {
-              const img = bgImgRef.current;
-              const scale = Math.max(w / img.width, h / img.height);
-              const x = w / 2 - (img.width / 2) * scale;
-              const y = h / 2 - (img.height / 2) * scale;
-              ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
-            } else if (backgroundType === 'blur') {
+            if (currentBgType === 'blur') {
+              ctx.save();
               ctx.filter = 'blur(16px)';
+              if (local && !screenShare) {
+                ctx.scale(-1, 1);
+                ctx.translate(-w, 0);
+              }
               ctx.drawImage(video, 0, 0, w, h);
-              ctx.filter = 'none';
-            }
+              ctx.restore();
+            } else {
+              // 1. Draw the chosen/uploaded background image FIRST
+              const img = bgImgRef.current;
+              if (img && img.complete && img.naturalWidth > 0) {
+                const scale = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+                const x = w / 2 - (img.naturalWidth / 2) * scale;
+                const y = h / 2 - (img.naturalHeight / 2) * scale;
+                ctx.drawImage(img, x, y, img.naturalWidth * scale, img.naturalHeight * scale);
+              } else {
+                const grad = ctx.createLinearGradient(0, 0, w, h);
+                grad.addColorStop(0, '#1e293b');
+                grad.addColorStop(0.5, '#0f172a');
+                grad.addColorStop(1, '#020617');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+              }
 
-            // 2. Draw person with soft portrait vignette
-            ctx.save();
-            if (isLocal && !isScreenShare) {
-              ctx.scale(-1, 1);
-              ctx.translate(-w, 0);
+              // 2. Draw user clipped softly in the center portrait area
+              ctx.save();
+              ctx.beginPath();
+              ctx.ellipse(w / 2, h * 0.52, w * 0.36, h * 0.46, 0, 0, Math.PI * 2);
+              ctx.clip();
+              if (local && !screenShare) {
+                ctx.scale(-1, 1);
+                ctx.translate(-w, 0);
+              }
+              ctx.drawImage(video, 0, 0, w, h);
+              ctx.restore();
             }
-            // Create circular/oval soft mask centered on person
-            const radialGrad = ctx.createRadialGradient(
-              w / 2,
-              h * 0.55,
-              h * 0.15,
-              w / 2,
-              h * 0.55,
-              h * 0.65
-            );
-            radialGrad.addColorStop(0, 'rgba(0,0,0,1)');
-            radialGrad.addColorStop(0.7, 'rgba(0,0,0,0.85)');
-            radialGrad.addColorStop(1, 'rgba(0,0,0,0)');
-
-            // Clip softly
-            ctx.drawImage(video, 0, 0, w, h);
-            ctx.restore();
 
             ctx.restore();
           }
@@ -257,11 +348,11 @@ export const VirtualBackgroundVideo: React.FC<VirtualBackgroundVideoProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [backgroundType, modelReady, isLocal, isScreenShare]);
+  }, [modelReady]);
 
   return (
-    <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
-      {/* Hidden processing video */}
+    <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-black">
+      {/* Hidden processing video element */}
       <video
         ref={videoRef}
         autoPlay

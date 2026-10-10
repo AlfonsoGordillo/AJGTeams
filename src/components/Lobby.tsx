@@ -16,11 +16,13 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  X,
 } from 'lucide-react';
 import { SUPPORTED_LANGUAGES } from '../constants/languages';
 import { BackgroundModal } from './BackgroundModal';
 import { DeviceModal } from './DeviceModal';
 import { ApiStatusModal } from './ApiStatusModal';
+import { VirtualBackgroundVideo } from './VirtualBackgroundVideo';
 
 interface LobbyProps {
   initialRoomId: string;
@@ -64,8 +66,37 @@ export const Lobby: React.FC<LobbyProps> = ({ initialRoomId, onJoinMeeting }) =>
     type: 'none' | 'blur' | 'preset' | 'custom';
     url?: string;
   }>({ type: 'none' });
-  const [customBackgrounds, setCustomBackgrounds] = useState<string[]>([]);
+  const [customBackgrounds, setCustomBackgrounds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('meet_custom_backgrounds');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
   const [isBgModalOpen, setIsBgModalOpen] = useState(false);
+
+  const handleAddCustomBackground = (url: string) => {
+    setCustomBackgrounds((prev) => {
+      const updated = [url, ...prev.filter((item) => item !== url)].slice(0, 12);
+      try {
+        localStorage.setItem('meet_custom_backgrounds', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
+
+  const handleRemoveCustomBackground = (url: string) => {
+    setCustomBackgrounds((prev) => {
+      const updated = prev.filter((item) => item !== url);
+      try {
+        localStorage.setItem('meet_custom_backgrounds', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    if (background.type === 'custom' && background.url === url) {
+      setBackground({ type: 'none' });
+    }
+  };
 
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -225,23 +256,35 @@ export const Lobby: React.FC<LobbyProps> = ({ initialRoomId, onJoinMeeting }) =>
         {/* Left: Video Preview Green Room */}
         <div className="w-full lg:w-3/5 flex flex-col items-center">
           <div className="relative w-full aspect-video bg-[#3c4043] rounded-3xl overflow-hidden shadow-2xl border border-gray-700 flex items-center justify-center">
-            {/* Background layer in preview */}
-            {hasCustomOrPresetBg && !isCameraOff && (
-              <div
-                className="absolute inset-0 z-0 bg-cover bg-center"
-                style={{ backgroundImage: `url(${background.url})` }}
-              />
+            {/* Active Background Status Badge */}
+            {background.type !== 'none' && !isCameraOff && (
+              <div className="absolute top-4 left-4 z-20 flex items-center gap-2 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-full border border-blue-500/40 text-xs text-blue-300 shadow-lg animate-in fade-in">
+                <Sparkles className="w-3.5 h-3.5 text-blue-400" />
+                <span className="font-medium">
+                  {background.type === 'blur'
+                    ? 'Fondo: Desenfocado'
+                    : background.type === 'custom'
+                    ? 'Fondo: Personal subido'
+                    : 'Fondo Virtual Activo'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setBackground({ type: 'none' })}
+                  className="ml-1 text-gray-400 hover:text-white p-0.5 rounded transition-colors cursor-pointer"
+                  title="Quitar fondo virtual"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             )}
 
             {!isCameraOff && stream ? (
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className={`w-full h-full object-cover scale-x-[-1] relative z-1 ${
-                  background.type === 'blur' ? 'backdrop-blur-md filter blur-[1px]' : ''
-                }`}
+              <VirtualBackgroundVideo
+                stream={stream}
+                backgroundType={background.type}
+                backgroundUrl={background.url}
+                isLocal={true}
+                isMuted={true}
               />
             ) : (
               <div className="relative z-1 flex flex-col items-center justify-center text-center p-6">
@@ -487,7 +530,8 @@ export const Lobby: React.FC<LobbyProps> = ({ initialRoomId, onJoinMeeting }) =>
         currentBackground={background}
         onSelectBackground={(bg) => setBackground(bg)}
         customBackgrounds={customBackgrounds}
-        onAddCustomBackground={(url) => setCustomBackgrounds((prev) => [url, ...prev])}
+        onAddCustomBackground={handleAddCustomBackground}
+        onRemoveCustomBackground={handleRemoveCustomBackground}
       />
 
       {/* Device Configuration & Testing Modal */}

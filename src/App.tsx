@@ -64,7 +64,36 @@ export default function App() {
   // Background and Screen Share States
   const [isBgModalOpen, setIsBgModalOpen] = useState(false);
   const [isScreenShareModalOpen, setIsScreenShareModalOpen] = useState(false);
-  const [customBackgrounds, setCustomBackgrounds] = useState<string[]>([]);
+  const [customBackgrounds, setCustomBackgrounds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('meet_custom_backgrounds');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [];
+  });
+
+  const handleAddCustomBackground = (url: string) => {
+    setCustomBackgrounds((prev) => {
+      const updated = [url, ...prev.filter((item) => item !== url)].slice(0, 12);
+      try {
+        localStorage.setItem('meet_custom_backgrounds', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
+
+  const handleRemoveCustomBackground = (url: string) => {
+    setCustomBackgrounds((prev) => {
+      const updated = prev.filter((item) => item !== url);
+      try {
+        localStorage.setItem('meet_custom_backgrounds', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    if (currentUser.backgroundType === 'custom' && currentUser.backgroundUrl === url) {
+      handleSelectBackground({ type: 'none' });
+    }
+  };
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const originalCamStreamRef = useRef<MediaStream | null>(null);
 
@@ -933,7 +962,8 @@ export default function App() {
         }}
         onSelectBackground={handleSelectBackground}
         customBackgrounds={customBackgrounds}
-        onAddCustomBackground={(url) => setCustomBackgrounds((prev) => [url, ...prev])}
+        onAddCustomBackground={handleAddCustomBackground}
+        onRemoveCustomBackground={handleRemoveCustomBackground}
       />
 
       {/* Screen Share Modal */}
